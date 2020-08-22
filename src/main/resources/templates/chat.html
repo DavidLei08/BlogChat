@@ -1,0 +1,259 @@
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>BlogChat</title>
+    <!-- Set render engine for 360 browser -->
+    <meta name="renderer" content="webkit">
+    <!-- No Baidu Siteapp-->
+    <meta http-equiv="Cache-Control" content="no-siteapp"/>
+    <link rel="alternate icon" th:href="@{assets/i/favicon.ico}">
+    <link rel="stylesheet" th:href="@{assets/css/amazeui.min.css}">
+    <link rel="stylesheet" th:href="@{assets/css/app.css}">
+    <!-- umeditor css -->
+    <link th:href="@{/umeditor/themes/default/css/ueditor.css}" rel="stylesheet">
+    <style>
+        .title {
+            text-align: center;
+        }
+
+        .chat-content-container {
+            height: 35rem;
+            overflow-y: scroll;
+            border: 1px solid silver;
+        }
+    </style>
+</head>
+<body>
+<div style="border-radius: 15%;border: darkblue;">
+    <!-- title start -->
+    <div class="title">
+        <div class="am-g am-g-fixed">
+            <div class="am-u-sm-12">
+                <h1 class="am-text-primary">BlogChat ( <span id="status_bar" style="color: darkblue">outline</span>)
+                </h1>
+
+            </div>
+        </div>
+    </div>
+    <!-- title end -->
+    <!-- chat content start -->
+    <div class="chat-content">
+        <div class="am-g am-g-fixed chat-content-container">
+            <div class="am-u-sm-12">
+                <ul id="message-list" class="am-comments-list am-comments-list-flip"></ul>
+            </div>
+        </div>
+    </div>
+    <!-- chat content start -->
+    <!-- message input start -->
+    <div class="message-input am-margin-top">
+        <div class="am-g am-g-fixed">
+            <div class="am-u-sm-12">
+                <form class="am-form">
+                    <div class="am-form-group">
+                        <script type="text/plain" id="myEditor" style="width: 100%;height: 8rem;"></script>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div class="am-g am-g-fixed am-margin-top">
+            <div class="am-u-sm-6">
+                <div id="message-input-nickname" class="am-input-group am-input-group-primary">
+                    <input id="roomId" type="text" class="am-form-field" placeholder="Please enter roomId"/>
+                    <button id="enter" type="button" class="am-btn am-btn-primary">
+                        <i class="am-icon-connectdevelop"></i> enter
+                    </button>
+                    &nbsp;
+                    <button id="exit" type="button" class="am-btn am-btn-primary">
+                        <i class="am-icon-close"></i> exit
+                    </button>
+                </div>
+            </div>
+            <div class="am-u-sm-6">
+                <button id="send" type="button" class="am-btn am-btn-primary">
+                    <i class="am-icon-send"></i> Send
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- message input end -->
+<script src="assets/js/jquery.min.js"></script>
+<!-- umeditor js -->
+<script charset="utf-8" th:src="@{/umeditor/ueditor.config.js}"></script>
+<script charset="utf-8" th:src="@{/umeditor/ueditor.all.min.js}"></script>
+
+<script th:src="@{/umeditor/ueditor.parse.min.js}"></script>
+<script th:src="@{/umeditor/lang/zh-cn/zh-cn.js}"></script>
+<script th:src="@{/assets/js/socket.io.js}"></script>
+<script>
+
+    //socket.io
+    var socket;
+    var errorCount = 0;
+    var isConnected = false;
+    var maxError = 5;
+
+    var localClientId = '';
+
+    //socket.io连接
+    function connect(url, clientId, roomId) {
+        if (url == '' || url == null || url == undefined) {
+            url = 'http://localhost:9000';
+        }
+
+        if (clientId == '' || clientId == null || clientId == undefined) {
+            clientId = randomString(10);
+        }
+        localClientId = clientId;
+        var opts = {
+            query: 'clientId=' + clientId + '&roomId=' + roomId
+
+        };
+        socket = io.connect(url, opts);
+
+        socket.on('connect', function () {
+            isConnected = true;
+            $("#status_bar").html('online')
+            console.log("connect successful");
+            errorCount = 0;
+        });
+
+        socket.on('disconnect', function () {
+            isConnected = false;
+            $("#status_bar").html('outline')
+            console.log("disconnect");
+        });
+        socket.on('connect_error', function (data) {
+            console.log('connect_error:' + data)
+            errorCount++;
+            if (errorCount >= maxError) {
+                socket.disconnect();
+            }
+        });
+        socket.on('connect_timeout', function (data) {
+            console.log('connect_timeout:' + data)
+            errorCount++;
+            if (errorCount >= maxError) {
+                socket.disconnect();
+            }
+        });
+        socket.on('error', function (data) {
+            console.log('error:' + data)
+            errorCount++;
+            if (errorCount >= maxError) {
+                socket.disconnect();
+            }
+        });
+        // 处理服务器端发送的数据
+        socket.on('message', function (data) {
+            console.log('message:' + data)
+            console.log(data);
+            addMessage(data);
+        });
+    }
+
+    // 把消息添加到聊天内容中
+    function addMessage(message) {
+        message = JSON.parse(message);
+        var messageItem = '<li class="am-comment '
+            + (message.isSelf ? 'am-comment-flip' : 'am-comment')
+            + '">'
+            + '<a href="javascript:void(0)" ><img src="assets/images/'
+            + (message.isSelf ? 'self.png' : 'others.jpg')
+            + '" alt="" class="am-comment-avatar" width="48" height="48"/></a>'
+            + '<div class="am-comment-main"><header class="am-comment-hd"><div class="am-comment-meta">'
+            + '<a href="javascript:void(0)" class="am-comment-author">'
+            + message.clientId + '</a> <time>' + message.date
+            + '</time></div></header>'
+            + '<div class="am-comment-bd">' + message.content
+            + '</div></div></li>';
+        $(messageItem).appendTo('#message-list');
+        // 把滚动条滚动到底部
+        $(".chat-content-container").scrollTop($(".chat-content-container")[0].scrollHeight);
+    }
+
+    $(function () {
+        // 初始化消息输入框
+        var um = UE.getEditor('myEditor');
+        // 使昵称框获取焦点
+        $('#roomId')[0].focus();
+
+
+        var roomId;
+        // 点击Send按钮时的操作
+        $('#send').on('click', function () {
+            roomId = $('#roomId').val();
+            if (!um.hasContents()) {    // 判断消息输入框是否为空
+                // 消息输入框获取焦点
+                um.focus();
+                // 添加抖动效果
+                $('.edui-container').addClass('am-animation-shake');
+                setTimeout("$('.edui-container').removeClass('am-animation-shake')", 1000);
+            } else if (roomId == '') {    // 判断昵称框是否为空
+                //昵称框获取焦点
+                $('#roomId')[0].focus();
+                // 添加抖动效果
+                $('#message-input-nickname').addClass('am-animation-shake');
+                setTimeout("$('#message-input-nickname').removeClass('am-animation-shake')", 1000);
+            } else {
+                // 发送消息
+                // var  sendMessage ={
+                //     isSelf:false,
+                //     clientId:  localClientId,
+                //     content: um.getContent(),
+                //     date:getNowTime()
+                //  }
+                //  addMessage(JSON.stringify(sendMessage))
+
+                socket.emit('message', JSON.stringify({
+                    clientId: localClientId,
+                    content: um.getContent(),
+                    roomId: roomId
+                }));
+                // 清空消息输入框
+                um.setContent('');
+                // 消息输入框获取焦点
+                um.focus();
+            }
+        });
+
+        $("#enter").on('click', function () {
+            connect(null, null, roomId);
+        });
+        $("#exit").on('click', function () {
+            socket.disconnect();
+        });
+
+    });
+
+    function getNowTime() {
+        var date = new Date();
+        var year = date.getFullYear(); //获取当前年份
+        var mon = date.getMonth() + 1; //获取当前月份
+        var da = date.getDate(); //获取当前日
+        var h = date.getHours(); //获取小时
+        var m = date.getMinutes(); //获取分钟
+        var s = date.getSeconds(); //获取秒
+        var ms = date.getMilliseconds();
+        //var date =year+'/'+mon+'/'+da+' '+h+':'+m+':'+s+':'+ms;
+        var dateStr = year + '/' + mon + '/' + da + ' ' + h + ':' + m + ':' + s;
+        return dateStr;
+    }
+
+    function randomString(len) {
+        len = len || 32;
+        var $chars = 'ABCDEFGHJKMNPQRSTWXYZabcdefhijkmnprstwxyz2345678';
+        /****默认去掉了容易混淆的字符oOLl,9gq,Vv,Uu,I1****/
+        var maxPos = $chars.length;
+        var pwd = '';
+        for (i = 0; i < len; i++) {
+            pwd += $chars.charAt(Math.floor(Math.random() * maxPos));
+        }
+        return pwd;
+    }
+</script>
+</body>
+</html>
